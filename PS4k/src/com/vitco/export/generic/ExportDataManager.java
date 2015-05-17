@@ -241,9 +241,9 @@ public class ExportDataManager extends ProgressReporter {
                         // Note: This *should* work the same if only outside is used (i.e. holes are removed)
                         polys = fix3DTJunctionProblems(polys, planeAbove, id1, id2, minA, minB);
                         // extract triangles
-                         tris = Grid2TriPolyFast.triangulate(polys);
+                        // tris = Grid2TriPolyFast.triangulate(polys);
                         // extract triangles with angle guarantee
-                        // tris = Grid2TriPolyFast.triangulate_degenerate_removal(polys);
+                         tris = Grid2TriPolyFast.triangulate_degenerate_removal(polys);
                         break;
                 }
 

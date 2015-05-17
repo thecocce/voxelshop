@@ -1,6 +1,6 @@
 package com.vitco.low.triangulate;
 
-import com.vitco.util.graphic.Util3D;
+import com.vitco.util.graphic.G2DUtil;
 import com.vitco.util.misc.IntegerTools;
 import gnu.trove.set.hash.TIntHashSet;
 import org.poly2tri.Poly2Tri;
@@ -33,56 +33,12 @@ public class Grid2TriPolyFast {
     // interpolation value
     private static final double INTERP = 0.000001;
 
+    private static final int MIN_ANGLE = 30;
+
     // ==============
 
     // helper - we need only one context for all conversion (faster)
     private final static TriangulationContext tcx = Poly2Tri.createContext(TriangulationAlgorithm.DTSweep);
-
-    /**
-     * Do one step in the while loop of the referenced algorithm.
-     * Reference: http://www.cs.berkeley.edu/~jrs/meshpapers/ErtenUngor.pdf
-     */
-    private static void degenerate_removal_step(DelaunayTriangle tri, ArrayList<ArrayList<PolygonPoint>> polygon, List<TriangulationPoint> steinerPoints) {
-        double[][] points = Util3D.get_triangle_points(tri);
-        double[] sides_length = Util3D.get_triangle_sides_length(points);
-        TriangulationPoint[] longest_side;
-        if (sides_length[0] > sides_length[1] && sides_length[0] > sides_length[2]) {
-            longest_side = new TriangulationPoint[] {tri.points[1], tri.points[2]};
-        } else if (sides_length[1] > sides_length[2]) {
-            longest_side = new TriangulationPoint[] {tri.points[0], tri.points[2]};
-        } else {
-            longest_side = new TriangulationPoint[] {tri.points[0], tri.points[1]};
-        }
-        PolygonPoint middle_point = new PolygonPoint(
-                (longest_side[0].getX() + longest_side[1].getX()) / 2f,
-                (longest_side[0].getY() + longest_side[1].getY()) / 2f,
-                (longest_side[0].getZ() + longest_side[1].getZ()) / 2f
-        );
-        PolygonPoint center_point = new PolygonPoint(
-                (points[0][0] + points[1][0] + points[2][0]) / 3f,
-                (points[0][1] + points[1][1] + points[2][1]) / 3f,
-                (points[0][2] + points[1][2] + points[2][2]) / 3f
-        );
-
-        boolean added = false;
-        // check if side is contained (then we add a point in the middle)
-        mainLoop: for (ArrayList<PolygonPoint> contour : polygon) {
-            for (int i = 0, len = contour.size(); i < len; i++) {
-                PolygonPoint p = contour.get(i);
-                if (p == longest_side[0] || p == longest_side[1]) {
-                    PolygonPoint p2 = i+1 == len ? contour.get(0) : contour.get(i+1);
-                    if (p2 == longest_side[0] || p2 == longest_side[1]) {
-                        contour.add(i + 1, middle_point);
-                        added = true;
-                        break mainLoop;
-                    }
-                }
-            }
-        }
-        if (!added) {
-            steinerPoints.add(center_point);
-        }
-    }
 
     /**
      * Refresh a polygon. This is necessary after triangulation to be able to perform another triangulation.
@@ -96,6 +52,121 @@ public class Grid2TriPolyFast {
     }
 
     /**
+     * Compute circle with radius r that has it center on the "left side" of the
+     * line and has both points on it's border.
+     */
+    public static double[] find_line_circle_center(double x1, double y1, double x2, double y2, double r) {
+        double[] middle_point = new double[] {(x1 + x2) / 2, (y1 + y2) / 2};
+        double dist = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+        double[] direction = new double[] {(y1 - y2) / dist, (x2 - x1) / dist};
+        return new double[] {
+                middle_point[0] + Math.sqrt(Math.pow(r, 2) - Math.pow(dist / 2, 2)) * direction[0],
+                middle_point[1] + Math.sqrt(Math.pow(r, 2) - Math.pow(dist / 2, 2)) * direction[1]
+        };
+    }
+
+    /**
+     * Do one step in the while loop of the referenced algorithm.
+     * Reference: http://www.cs.berkeley.edu/~jrs/meshpapers/ErtenUngor.pdf
+     */
+    private static boolean degenerate_removal_step(DelaunayTriangle bad_tri, List<DelaunayTriangle> triangles, ArrayList<ArrayList<PolygonPoint>> polygon, List<TriangulationPoint> steinerPoints) {
+        // find shortest side
+        double[][] points = G2DUtil.get_triangle_points(bad_tri);
+        double[] sides_length = G2DUtil.get_triangle_sides_length(points);
+        double min_side_length;
+        double[][] min_side;
+        if (sides_length[0] < sides_length[1] && sides_length[0] < sides_length[2]) {
+            min_side = new double[][] {points[1], points[2]};
+            min_side_length = sides_length[0];
+        } else if (sides_length[1] < sides_length[2]) {
+            min_side = new double[][] {points[2], points[0]};
+            min_side_length = sides_length[1];
+        } else {
+            min_side = new double[][] {points[0], points[1]};
+            min_side_length = sides_length[2];
+        }
+        // compute circle center
+        double r = 2 * Math.sin((MIN_ANGLE/180d) * Math.PI) * min_side_length;
+        double[] center = find_line_circle_center(min_side[0][0], min_side[0][1], min_side[1][0], min_side[1][1], r);
+        // collect all points
+        ArrayList<TriangulationPoint> all_points = new ArrayList<TriangulationPoint>();
+        for (ArrayList<PolygonPoint> contour : polygon) {
+            all_points.addAll(contour);
+        }
+        all_points.addAll(steinerPoints);
+        // this will hold all possible points
+        ArrayList<double[]> possible_addition = new ArrayList<double[]>();
+        for (DelaunayTriangle tri : triangles) {
+            // add all triangle centers
+            possible_addition.add(G2DUtil.computeCircumcenter(tri));
+            // todo: check intersections with circle
+            // todo: check intersections with other triangles (for border)
+//            // add all orithogonal edges
+//            double[][][] orth_line = new double[][][]{
+//                    G2DUtil.getOrthogonalLine(
+//                            tri.points[0].getX(), tri.points[0].getY(),
+//                            tri.points[1].getX(), tri.points[1].getY()
+//                    ),
+//                    G2DUtil.getOrthogonalLine(
+//                            tri.points[1].getX(), tri.points[1].getY(),
+//                            tri.points[2].getX(), tri.points[2].getY()
+//                    ),
+//                    G2DUtil.getOrthogonalLine(
+//                            tri.points[2].getX(), tri.points[2].getY(),
+//                            tri.points[0].getX(), tri.points[0].getY()
+//                    )
+//            };
+
+        }
+        // filter points
+        for (int i = 0; i < possible_addition.size(); i++) {
+            double[] p = possible_addition.get(i);
+            // check if in circle
+            if (!G2DUtil.contains(center[0], center[1], r, p[0], p[1])) {
+//                System.out.println(center[0] + " " + center[1] + " " + r + " " + p[0] + " " + p[1]);
+                possible_addition.remove(i);
+                i--;
+                continue;
+            }
+            // check if a valid point
+            boolean contained = false;
+            for (DelaunayTriangle tri : triangles) {
+                if (G2DUtil.inTriangle((float) p[0], (float) p[1], tri.points[0].getXf(), tri.points[0].getYf(), tri.points[1].getXf(), tri.points[1].getYf(), tri.points[2].getXf(), tri.points[2].getYf())) {
+                    contained = true;
+                    break;
+                }
+            }
+            if (!contained) {
+                possible_addition.remove(i);
+                i--;
+            }
+        }
+        // check which point is best
+        double largest_min_dist = 0;
+        double[] addition = null;
+        for (double[] p : possible_addition) {
+            // compute the distance
+            double min_dist = Double.MAX_VALUE;
+            for (TriangulationPoint vertex : all_points) {
+                double dist = Math.sqrt(Math.pow(p[0] - vertex.getX(), 2) + Math.pow(p[1] - vertex.getY(), 2));
+                if (dist < min_dist) {
+                    min_dist = dist;
+                }
+            }
+            if (largest_min_dist < min_dist) {
+                largest_min_dist = min_dist;
+                addition = p;
+            }
+        }
+        if (addition != null) {
+            // todo: this might be a new point on a contour (need check here!)
+            steinerPoints.add(new PolygonPoint(addition[0], addition[1]));
+            return true;
+        }
+        return false;
+    }
+
+    /**
      * Triangulate a list of polygons while removing degenerate triangles.
      */
     public static ArrayList<DelaunayTriangle> triangulate_degenerate_removal(short[][][] polys) {
@@ -103,32 +174,31 @@ public class Grid2TriPolyFast {
 
         // loop over all polygon (a polygon consists of exterior and interior ring)
         for (short[][] poly : polys) {
-            List<DelaunayTriangle> triangles;
+            List<DelaunayTriangle> triangles; // stores an interpolated polygon ("0" entry is contour, others are holes)
             List<TriangulationPoint> steinerPoints = new ArrayList<TriangulationPoint>();
             boolean has_bad_triangles;
             ArrayList<ArrayList<PolygonPoint>> polygon = short_array_to_poly(poly);
+            int max_count = 5;
 
+            // ensure that there are no bad triangles
             do {
                 has_bad_triangles = false;
-                // stores an interpolated polygon ("0" entry is contour, others are holes)
                 refresh_polygon(polygon);
                 triangles = triangulate_poly(polygon, steinerPoints);
 
-                double angle = Float.MAX_VALUE;
-                DelaunayTriangle worst_triangle = null;
                 for (DelaunayTriangle tri : triangles) {
-                    double new_angle = Util3D.get_min_angle(tri);
-                    if (new_angle < angle) {
-                        angle = new_angle;
-                        worst_triangle = tri;
+                    if (tri.area() < 1) {
+                        continue;
+                    }
+                    if (G2DUtil.get_min_angle(tri) < MIN_ANGLE) {
+                        if (degenerate_removal_step(tri, triangles, polygon, steinerPoints)) {
+                            has_bad_triangles = true;
+                            break;
+                        }
                     }
                 }
-                if (angle < 20) {
-                    degenerate_removal_step(worst_triangle, polygon, steinerPoints);
-                    has_bad_triangles = true;
-                }
 
-            } while (has_bad_triangles);
+            } while (has_bad_triangles && max_count-- > 0);
 
             result.addAll(triangles);
 
