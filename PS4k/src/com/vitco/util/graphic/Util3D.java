@@ -1,11 +1,50 @@
 package com.vitco.util.graphic;
 
 import com.threed.jpct.SimpleVector;
+import org.poly2tri.triangulation.delaunay.DelaunayTriangle;
 
 /**
  * Helper class to perform 3D calculation tasks
  */
 public final class Util3D {
+
+    /**
+     * Get the points of a DelaunayTriangle as a double list.
+     */
+    public static double[][] get_triangle_points(DelaunayTriangle tri) {
+        return new double[][] {
+                new double[] {tri.points[0].getX(), tri.points[0].getY(), tri.points[0].getZ()},
+                new double[] {tri.points[1].getX(), tri.points[1].getY(), tri.points[1].getZ()},
+                new double[] {tri.points[2].getX(), tri.points[2].getY(), tri.points[2].getZ()}
+        };
+    }
+
+    /**
+     * Get the side length of a DelaunayTriangle as a double array. The first side is the side opposite of the
+     * first point and so on.
+     */
+    public static double[] get_triangle_sides_length(double[][] points) {
+        double abs_a = Math.sqrt(Math.pow(points[1][0] - points[2][0], 2) + Math.pow(points[1][1] - points[2][1], 2) + Math.pow(points[1][2] - points[2][2], 2));
+        double abs_b = Math.sqrt(Math.pow(points[0][0] - points[2][0], 2) + Math.pow(points[0][1] - points[2][1], 2) + Math.pow(points[0][2] - points[2][2], 2));
+        double abs_c = Math.sqrt(Math.pow(points[0][0] - points[1][0], 2) + Math.pow(points[0][1] - points[1][1], 2) + Math.pow(points[0][2] - points[1][2], 2));
+        return new double[] {abs_a, abs_b, abs_c};
+    }
+
+    /**
+     * Obtain the minimal angle of a DelaunayTriangle.
+     */
+    public static double get_min_angle(DelaunayTriangle tri) {
+        double[][] points = get_triangle_points(tri);
+        double[] side_length = get_triangle_sides_length(points);
+        double max_side_length = Math.max(Math.max(side_length[0], side_length[1]), side_length[2]);
+        double med_side_length = Math.max(
+                Math.min(side_length[0], side_length[1]),
+                Math.min(Math.max(side_length[0], side_length[1]), side_length[2])
+        );
+        return Math.acos(med_side_length / max_side_length) * 180/Math.PI;
+    }
+
+
     public static SimpleVector nearestPoint(SimpleVector[] line, SimpleVector point) {
         SimpleVector a = new SimpleVector(line[0]);
         a.sub(point);
