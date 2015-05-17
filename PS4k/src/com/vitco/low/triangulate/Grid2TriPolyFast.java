@@ -12,7 +12,6 @@ import org.poly2tri.triangulation.TriangulationPoint;
 import org.poly2tri.triangulation.delaunay.DelaunayTriangle;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 
 /**
@@ -22,7 +21,7 @@ import java.util.List;
  *
  * Note: The main difference between this algorithm and the JAI algorithm of "voxel -> polygon" is
  * that this one already combines holes that touch inside a polygon and furthermore already integrates
- * holes that touch the outline of the polygon. This is helpful as it is required for processing
+ * holes that touch the contour of the polygon. This is helpful as it is required for processing
  * with Poly2Tri, but could probably be changes by changing
  *    (edgeR[4] == 1 ? 1 : -1)
  * to
@@ -40,29 +39,10 @@ public class Grid2TriPolyFast {
     private final static TriangulationContext tcx = Poly2Tri.createContext(TriangulationAlgorithm.DTSweep);
 
     /**
-     * Convert an outline (this could be a hole or a polygon) into a list of PolygonPoint. The PolygonPoints
-     * are interpolated to avoid conflict with overlapping point. This is important for the poly2tri library.
-     */
-    private static ArrayList<PolygonPoint> parse_contour(short[] outline) {
-        // stores and manages all seen points
-        TIntHashSet indexer = new TIntHashSet();
-        ArrayList<PolygonPoint> resultOutline = new ArrayList<PolygonPoint>();
-        for (int i = 0, len = outline.length - 2; i < len; i+=2) {
-            // check if we need to interpolate
-            if (!indexer.add(IntegerTools.makeInt(outline[i], outline[i + 1]))) {
-                resultOutline.add(new PolygonPoint(outline[i] - Math.signum(outline[i] - outline[i+2]) * INTERP, outline[i+1] - Math.signum(outline[i+1] - outline[i+3]) * INTERP));
-            } else {
-                resultOutline.add(new PolygonPoint(outline[i], outline[i+1]));
-            }
-        }
-        return resultOutline;
-    }
-
-    /**
      * Do one step in the while loop of the referenced algorithm.
      * Reference: http://www.cs.berkeley.edu/~jrs/meshpapers/ErtenUngor.pdf
      */
-    private static void prevent_degenerate(DelaunayTriangle tri, HashMap<Integer, ArrayList<PolygonPoint>> polygon, List<TriangulationPoint> steinerPoints) {
+    private static void degenerate_removal_step(DelaunayTriangle tri, ArrayList<ArrayList<PolygonPoint>> polygon, List<TriangulationPoint> steinerPoints) {
         double[][] points = Util3D.get_triangle_points(tri);
         double[] sides_length = Util3D.get_triangle_sides_length(points);
         TriangulationPoint[] longest_side;
@@ -84,17 +64,14 @@ public class Grid2TriPolyFast {
                 (points[0][2] + points[1][2] + points[2][2]) / 3f
         );
 
-        System.out.println("Triangle:" + tri.points[0] + " " + tri.points[1] + " " + tri.points[2]);
-
         boolean added = false;
         // check if side is contained (then we add a point in the middle)
-        mainLoop: for (ArrayList<PolygonPoint> contour : polygon.values()) {
+        mainLoop: for (ArrayList<PolygonPoint> contour : polygon) {
             for (int i = 0, len = contour.size(); i < len; i++) {
                 PolygonPoint p = contour.get(i);
                 if (p == longest_side[0] || p == longest_side[1]) {
                     PolygonPoint p2 = i+1 == len ? contour.get(0) : contour.get(i+1);
                     if (p2 == longest_side[0] || p2 == longest_side[1]) {
-                        System.out.println("Edge " + middle_point);
                         contour.add(i + 1, middle_point);
                         added = true;
                         break mainLoop;
@@ -103,94 +80,39 @@ public class Grid2TriPolyFast {
             }
         }
         if (!added) {
-            System.out.println("Steiner " + center_point);
             steinerPoints.add(center_point);
         }
+    }
 
-        boolean first = true;
-        for (ArrayList<PolygonPoint> contour : polygon.values()) {
-            System.out.println(first ? "First" : "Hole");
-            for (PolygonPoint p : contour) {
-                System.out.println(p);
+    /**
+     * Refresh a polygon. This is necessary after triangulation to be able to perform another triangulation.
+     */
+    private static void refresh_polygon(ArrayList<ArrayList<PolygonPoint>> polygon) {
+        for (ArrayList<PolygonPoint> contour : polygon) {
+            for (int i = 0; i < contour.size(); i++) {
+                contour.set(i, new PolygonPoint(contour.get(i).getX(), contour.get(i).getY()));
             }
-            first = false;
         }
     }
 
-    private static void remove_degenerate_triangles() {
-
-    }
-
-    // triangulate a polygon, the input data is interpolated to allow Poly2Tri to process it.
-    // Hence the output data is slightly "off". This can be fixed by rounding the output data, don't use (int)
-    // casting though as this might round down instead of up.
-    public static ArrayList<DelaunayTriangle> triangulate(short[][][] polys) {
+    /**
+     * Triangulate a list of polygons while removing degenerate triangles.
+     */
+    public static ArrayList<DelaunayTriangle> triangulate_degenerate_removal(short[][][] polys) {
         ArrayList<DelaunayTriangle> result = new ArrayList<DelaunayTriangle>();
 
         // loop over all polygon (a polygon consists of exterior and interior ring)
         for (short[][] poly : polys) {
-
-            // stores an interpolated polygon ("0" entry is outline, others are holes)
-            HashMap<Integer, ArrayList<PolygonPoint>> polygon = new HashMap<Integer, ArrayList<PolygonPoint>>();
-
-            // loop over polygon outline (j=0) and holes (j>0)
-            for (int j = 0; j < poly.length; j++) {
-                polygon.put(j, parse_contour(poly[j]));
-            }
-
             List<DelaunayTriangle> triangles;
-            boolean has_bad_triangles;
             List<TriangulationPoint> steinerPoints = new ArrayList<TriangulationPoint>();
-
-            boolean first = true;
-            for (ArrayList<PolygonPoint> contour : polygon.values()) {
-                System.out.println(first ? "First" : "Hole");
-                for (PolygonPoint p : contour) {
-                    System.out.println(p);
-                }
-                first = false;
-            }
+            boolean has_bad_triangles;
+            ArrayList<ArrayList<PolygonPoint>> polygon = short_array_to_poly(poly);
 
             do {
-                HashMap<Integer, ArrayList<PolygonPoint>> polygon2 = new HashMap<Integer, ArrayList<PolygonPoint>>();
-                int i = 0;
-                for (ArrayList<PolygonPoint> contour : polygon.values()) {
-                    ArrayList<PolygonPoint> list = new ArrayList<PolygonPoint>();
-                    for (PolygonPoint p : contour) {
-                        list.add(new PolygonPoint(p.getX(), p.getY()));
-                    }
-                    polygon2.put(i, list);
-                    i++;
-                }
-                polygon = polygon2;
-                List<TriangulationPoint> steinerPoints2 = new ArrayList<TriangulationPoint>();
-                for (TriangulationPoint p : steinerPoints) {
-                    steinerPoints2.add(new PolygonPoint(p.getX(), p.getY()));
-                }
-                steinerPoints = steinerPoints2;
-
                 has_bad_triangles = false;
-                // convert to polygon from raw data (zero is always the id that contains the exterior of the polygon)
-                org.poly2tri.geometry.polygon.Polygon polyR = null;
-                for (ArrayList<PolygonPoint> contour : polygon.values()) {
-                    Polygon outline = new Polygon(contour);
-                    if (polyR == null) {
-                        polyR = outline;
-                    } else {
-                        polyR.addHole(outline);
-                    }
-                }
-                polyR.addSteinerPoints(steinerPoints);
-
-                // do the triangulation and add the triangles for this polygon
-                // Note: This needs to be synchronized to prevent multiple instances
-                // from accessing the tcx context at once
-                synchronized (tcx) {
-                    tcx.prepareTriangulation(polyR);
-                    Poly2Tri.triangulate(tcx);
-                    tcx.clear();
-                }
-                triangles = polyR.getTriangles();
+                // stores an interpolated polygon ("0" entry is contour, others are holes)
+                refresh_polygon(polygon);
+                triangles = triangulate_poly(polygon, steinerPoints);
 
                 double angle = Float.MAX_VALUE;
                 DelaunayTriangle worst_triangle = null;
@@ -202,16 +124,98 @@ public class Grid2TriPolyFast {
                     }
                 }
                 if (angle < 20) {
-                    prevent_degenerate(worst_triangle, polygon, steinerPoints);
+                    degenerate_removal_step(worst_triangle, polygon, steinerPoints);
                     has_bad_triangles = true;
                 }
 
             } while (has_bad_triangles);
 
-            System.out.println("==========");
-
             result.addAll(triangles);
 
+        }
+
+        // return all triangles
+        return result;
+    }
+
+    // =========================
+
+    /**
+     * Convert an contour (this could be a hole or a polygon) into a list of PolygonPoint. The PolygonPoints
+     * are interpolated to avoid conflict with overlapping point. This is important for the poly2tri library.
+     */
+    private static ArrayList<PolygonPoint> parse_contour(short[] contour) {
+        // stores and manages all seen points
+        TIntHashSet indexer = new TIntHashSet();
+        ArrayList<PolygonPoint> resultOutline = new ArrayList<PolygonPoint>();
+        for (int i = 0, len = contour.length - 2; i < len; i+=2) {
+            // check if we need to interpolate
+            if (!indexer.add(IntegerTools.makeInt(contour[i], contour[i + 1]))) {
+                resultOutline.add(new PolygonPoint(contour[i] - Math.signum(contour[i] - contour[i+2]) * INTERP, contour[i+1] - Math.signum(contour[i+1] - contour[i+3]) * INTERP));
+            } else {
+                resultOutline.add(new PolygonPoint(contour[i], contour[i+1]));
+            }
+        }
+        return resultOutline;
+    }
+
+    /**
+     * Convert a nested short polygon into a nest ArrayList of PolygonPoints
+     */
+    private static ArrayList<ArrayList<PolygonPoint>> short_array_to_poly(short[][] poly) {
+        // stores an interpolated polygon ("0" entry is contour, others are holes)
+        ArrayList<ArrayList<PolygonPoint>> polygon = new ArrayList<ArrayList<PolygonPoint>>();
+
+        // loop over polygon contour (j=0) and holes (j>0)
+        for (short[] contour : poly) {
+            polygon.add(parse_contour(contour));
+        }
+        return polygon;
+    }
+
+    /**
+     * Triangulate a polygon, optionally using Steiner points
+     */
+    private static List<DelaunayTriangle> triangulate_poly(ArrayList<ArrayList<PolygonPoint>> polygon, List<TriangulationPoint> steinerPoints) {
+        // convert to polygon from raw data (zero is always the id that contains the exterior of the polygon)
+        org.poly2tri.geometry.polygon.Polygon polyR = new Polygon(polygon.get(0));
+        for (int j = 1, len = polygon.size(); j < len; j++) {
+            polyR.addHole(new Polygon(polygon.get(j)));
+        }
+        if (steinerPoints != null) {
+            polyR.addSteinerPoints(steinerPoints);
+        }
+
+        // do the triangulation and add the triangles for this polygon
+        // Note: This needs to be synchronized to prevent multiple instances
+        // from accessing the tcx context at once
+        synchronized (tcx) {
+            tcx.prepareTriangulation(polyR);
+            Poly2Tri.triangulate(tcx);
+            tcx.clear();
+        }
+
+        return polyR.getTriangles();
+    }
+
+    /**
+     * Triangulate a polygon
+     */
+    private static List<DelaunayTriangle> triangulate_poly(ArrayList<ArrayList<PolygonPoint>> polygon) {
+        return triangulate_poly(polygon, null);
+    }
+
+    // triangulate a polygon, the input data is interpolated to allow Poly2Tri to process it.
+    // Hence the output data is slightly "off". This can be fixed by rounding the output data, don't use (int)
+    // casting though as this might round down instead of up.
+    public static ArrayList<DelaunayTriangle> triangulate(short[][][] polys) {
+        ArrayList<DelaunayTriangle> result = new ArrayList<DelaunayTriangle>();
+
+        // loop over all polygon (a polygon consists of exterior and interior ring)
+        for (short[][] poly : polys) {
+            // stores an interpolated polygon ("0" entry is contour, others are holes)
+            ArrayList<ArrayList<PolygonPoint>> polygon = short_array_to_poly(poly);
+            result.addAll(triangulate_poly(polygon));
         }
 
         // return all triangles
