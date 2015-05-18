@@ -12,6 +12,7 @@ import org.poly2tri.triangulation.TriangulationPoint;
 import org.poly2tri.triangulation.delaunay.DelaunayTriangle;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -43,11 +44,14 @@ public class Grid2TriPolyFast {
     /**
      * Refresh a polygon. This is necessary after triangulation to be able to perform another triangulation.
      */
-    private static void refresh_polygon(ArrayList<ArrayList<PolygonPoint>> polygon) {
+    private static void refresh_polygon(ArrayList<ArrayList<PolygonPoint>> polygon, List<TriangulationPoint> steinerPoints) {
         for (ArrayList<PolygonPoint> contour : polygon) {
             for (int i = 0; i < contour.size(); i++) {
                 contour.set(i, new PolygonPoint(contour.get(i).getX(), contour.get(i).getY()));
             }
+        }
+        for (int i = 0; i < steinerPoints.size(); i++) {
+            steinerPoints.set(i, new PolygonPoint(steinerPoints.get(i).getX(), steinerPoints.get(i).getY()));
         }
     }
 
@@ -99,31 +103,27 @@ public class Grid2TriPolyFast {
         for (DelaunayTriangle tri : triangles) {
             // add all triangle centers
             possible_addition.add(G2DUtil.computeCircumcenter(tri));
-            // todo: check intersections with circle
-            // todo: check intersections with other triangles (for border)
-//            // add all orithogonal edges
-//            double[][][] orth_line = new double[][][]{
-//                    G2DUtil.getOrthogonalLine(
-//                            tri.points[0].getX(), tri.points[0].getY(),
-//                            tri.points[1].getX(), tri.points[1].getY()
-//                    ),
-//                    G2DUtil.getOrthogonalLine(
-//                            tri.points[1].getX(), tri.points[1].getY(),
-//                            tri.points[2].getX(), tri.points[2].getY()
-//                    ),
-//                    G2DUtil.getOrthogonalLine(
-//                            tri.points[2].getX(), tri.points[2].getY(),
-//                            tri.points[0].getX(), tri.points[0].getY()
-//                    )
-//            };
-
+            // add all side centers
+            possible_addition.add(G2DUtil.getCenter(tri.points[0].getX(), tri.points[0].getY(), tri.points[1].getX(), tri.points[1].getY()));
+            possible_addition.add(G2DUtil.getCenter(tri.points[1].getX(), tri.points[1].getY(), tri.points[2].getX(), tri.points[2].getY()));
+            possible_addition.add(G2DUtil.getCenter(tri.points[2].getX(), tri.points[2].getY(), tri.points[0].getX(), tri.points[0].getY()));
+            // add tri line orthogonal intersections with circle
+            double[][] line = G2DUtil.getOrthogonalLine(tri.points[0].getX(), tri.points[0].getY(), tri.points[1].getX(), tri.points[1].getY());
+            Collections.addAll(possible_addition, G2DUtil.getIntersections(line[0][0], line[0][1], line[1][0], line[1][1], center[0], center[1], r));
+            line = G2DUtil.getOrthogonalLine(tri.points[1].getX(), tri.points[1].getY(), tri.points[2].getX(), tri.points[2].getY());
+            Collections.addAll(possible_addition, G2DUtil.getIntersections(line[0][0], line[0][1], line[1][0], line[1][1], center[0], center[1], r));
+            line = G2DUtil.getOrthogonalLine(tri.points[2].getX(), tri.points[2].getY(), tri.points[0].getX(), tri.points[0].getY());
+            Collections.addAll(possible_addition, G2DUtil.getIntersections(line[0][0], line[0][1], line[1][0], line[1][1], center[0], center[1], r));
+            // add tri line intersections with circle
+            Collections.addAll(possible_addition, G2DUtil.getIntersections(tri.points[0].getX(), tri.points[0].getY(), tri.points[1].getX(), tri.points[1].getY(), center[0], center[1], r));
+            Collections.addAll(possible_addition, G2DUtil.getIntersections(tri.points[1].getX(), tri.points[1].getY(), tri.points[2].getX(), tri.points[2].getY(), center[0], center[1], r));
+            Collections.addAll(possible_addition, G2DUtil.getIntersections(tri.points[2].getX(), tri.points[2].getY(), tri.points[0].getX(), tri.points[0].getY(), center[0], center[1], r));
         }
         // filter points
         for (int i = 0; i < possible_addition.size(); i++) {
             double[] p = possible_addition.get(i);
             // check if in circle
             if (!G2DUtil.contains(center[0], center[1], r, p[0], p[1])) {
-//                System.out.println(center[0] + " " + center[1] + " " + r + " " + p[0] + " " + p[1]);
                 possible_addition.remove(i);
                 i--;
                 continue;
@@ -131,7 +131,19 @@ public class Grid2TriPolyFast {
             // check if a valid point
             boolean contained = false;
             for (DelaunayTriangle tri : triangles) {
-                if (G2DUtil.inTriangle((float) p[0], (float) p[1], tri.points[0].getXf(), tri.points[0].getYf(), tri.points[1].getXf(), tri.points[1].getYf(), tri.points[2].getXf(), tri.points[2].getYf())) {
+                if (G2DUtil.onLine(tri.points[0].getX(), tri.points[0].getY(), tri.points[1].getX(), tri.points[1].getY(), p[0], p[1])) {
+                    contained = true;
+                    break;
+                }
+                if (G2DUtil.onLine(tri.points[1].getX(), tri.points[1].getY(), tri.points[2].getX(), tri.points[2].getY(), p[0], p[1])) {
+                    contained = true;
+                    break;
+                }
+                if (G2DUtil.onLine(tri.points[2].getX(), tri.points[2].getY(), tri.points[0].getX(), tri.points[0].getY(), p[0], p[1])) {
+                    contained = true;
+                    break;
+                }
+                if (G2DUtil.inTriangle(p[0], p[1], tri.points[0].getX(), tri.points[0].getY(), tri.points[1].getX(), tri.points[1].getY(), tri.points[2].getX(), tri.points[2].getY())) {
                     contained = true;
                     break;
                 }
@@ -158,9 +170,27 @@ public class Grid2TriPolyFast {
                 addition = p;
             }
         }
+        if (largest_min_dist < 2) {
+            addition = null;
+        }
         if (addition != null) {
-            // todo: this might be a new point on a contour (need check here!)
-            steinerPoints.add(new PolygonPoint(addition[0], addition[1]));
+            // this might be a new point on a contour
+            boolean added = false;
+            edgeLoop: for (ArrayList<PolygonPoint> contour : polygon) {
+                for (int i = 0; i < contour.size(); i++) {
+                    int index2 = i + 1 < contour.size() ? i + 1 : 0;
+                    PolygonPoint p1 = contour.get(i);
+                    PolygonPoint p2 = contour.get(index2);
+                    if (G2DUtil.onLine(p2.getX(), p2.getY(), p1.getX(), p1.getY(), addition[0], addition[1])) {
+                        contour.add(index2, new PolygonPoint(addition[0], addition[1]));
+                        added = true;
+                        break edgeLoop;
+                    }
+                }
+            }
+            if (!added) {
+                steinerPoints.add(new PolygonPoint(addition[0], addition[1]));
+            }
             return true;
         }
         return false;
@@ -178,18 +208,15 @@ public class Grid2TriPolyFast {
             List<TriangulationPoint> steinerPoints = new ArrayList<TriangulationPoint>();
             boolean has_bad_triangles;
             ArrayList<ArrayList<PolygonPoint>> polygon = short_array_to_poly(poly);
-            int max_count = 5;
 
             // ensure that there are no bad triangles
             do {
                 has_bad_triangles = false;
-                refresh_polygon(polygon);
+                refresh_polygon(polygon, steinerPoints);
                 triangles = triangulate_poly(polygon, steinerPoints);
+                Collections.shuffle(triangles);
 
                 for (DelaunayTriangle tri : triangles) {
-                    if (tri.area() < 1) {
-                        continue;
-                    }
                     if (G2DUtil.get_min_angle(tri) < MIN_ANGLE) {
                         if (degenerate_removal_step(tri, triangles, polygon, steinerPoints)) {
                             has_bad_triangles = true;
@@ -198,7 +225,7 @@ public class Grid2TriPolyFast {
                     }
                 }
 
-            } while (has_bad_triangles && max_count-- > 0);
+            } while (has_bad_triangles);
 
             result.addAll(triangles);
 

@@ -69,12 +69,13 @@ public class G2DUtil {
     public static double get_min_angle(DelaunayTriangle tri) {
         double[][] points = get_triangle_points(tri);
         double[] side_length = get_triangle_sides_length(points);
+        double min_side_length = Math.min(Math.min(side_length[0], side_length[1]), side_length[2]);
         double max_side_length = Math.max(Math.max(side_length[0], side_length[1]), side_length[2]);
         double med_side_length = Math.max(
                 Math.min(side_length[0], side_length[1]),
                 Math.min(Math.max(side_length[0], side_length[1]), side_length[2])
         );
-        return Math.acos(med_side_length / max_side_length) * 180/Math.PI;
+        return (Math.acos((Math.pow(max_side_length, 2) + Math.pow(med_side_length, 2) - Math.pow(min_side_length, 2)) / ( 2 * max_side_length * med_side_length))) * (180/Math.PI);
     }
 
     /**
@@ -95,6 +96,36 @@ public class G2DUtil {
             middle,
             new double[]{middle[0] + direction[0], middle[1] + direction[1]}
         };
+    }
+
+    /**
+     * Compute line circle intersections
+     */
+    public static double[][] getIntersections(double x1, double y1, double x2, double y2, double cx, double cy, double r) {
+        double[] a = new double[] {cx - x1, cy - y1};
+        double line_length = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+        double[] b_norm = new double[] {(x2 - x1)/line_length, (y2 - y1)/line_length};
+        double proj_length = a[0] * b_norm[0] + a[1] * b_norm[1];
+        double[] nearest_point = new double[] {x1 + b_norm[0] * proj_length, y1 + b_norm[1] * proj_length};
+        double nearest_point_dist = Math.sqrt(Math.pow(cx - nearest_point[0], 2) + Math.pow(cy - nearest_point[1], 2));
+        if (nearest_point_dist > r) {
+            return new double[0][];
+        }
+        if (nearest_point_dist == r) {
+            return new double[][] {nearest_point};
+        }
+        double offset = Math.sqrt(Math.pow(r, 2) - Math.pow(nearest_point_dist, 2));
+        return new double[][] {
+                new double[] {x1 + b_norm[0] * (proj_length + offset), y1 + b_norm[1] * (proj_length + offset)},
+                new double[] {x1 + b_norm[0] * (proj_length - offset), y1 + b_norm[1] * (proj_length - offset)}
+        };
+    }
+
+    /**
+     * Compute center of two points
+     */
+    public static double[] getCenter(double x1, double y1, double x2, double y2) {
+        return new double[] {(x1 + x2)/2, (y1 + y2)/2};
     }
 
     /**
@@ -197,6 +228,24 @@ public class G2DUtil {
             return d1 == d2;
         }
         return (float)(((y2 - y1)/d1)) == (float)(((y4 - y3)/d2));
+    }
+
+    // test if point is in triangle
+    public static boolean inTriangle(double px, double py,
+                                     double p0x, double p0y, double p1x, double p1y, double p2x, double p2y) {
+        double s = p0y * p2x - p0x * p2y + (p2y - p0y) * px + (p0x - p2x) * py;
+        double t = p0x * p1y - p0y * p1x + (p0y - p1y) * px + (p1x - p0x) * py;
+
+        if ((s < 0) != (t < 0))
+            return false;
+
+        double A = -p1y * p2x + p0y * (p2x - p1x) + p0x * (p1y - p2y) + p1x * p2y;
+        if (A < 0) {
+            s = -s;
+            t = -t;
+            A = -A;
+        }
+        return s > 0 && t > 0 && (s + t) < A;
     }
 
     // test if point is in triangle
