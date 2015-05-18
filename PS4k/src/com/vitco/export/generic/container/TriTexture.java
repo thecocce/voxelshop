@@ -512,9 +512,9 @@ public class TriTexture {
                     axis == 1 ? depth : (axis == 0 ? point[0] : point[1]),
                     axis == 2 ? depth : point[1],
             }, false);
-            assert voxel != null;
+            int color = voxel != null ? voxel.getColor().getRGB() : 0;
             // add the pixel
-            pixels.put(p, new int[] {x, y, voxel.getColor().getRGB()});
+            pixels.put(p, new int[] {x, y, color});
         }
 
         // compress textures (scale if this can be done loss-less)

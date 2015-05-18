@@ -94,12 +94,12 @@ public class ExportDataManager extends ProgressReporter {
     }
 
     // make sure that the polygon has no 3D t-junction problems
-    private short[][][] fix3DTJunctionProblems(short[][][] polys, int planeAbove, int id1, int id2, int minA, int minB) {
+    private short[][][] fix3DTJunctionProblems(short[][][] polys, short planeAbove, int id1, int id2, int minA, int minB) {
         // result array
         short[][][] result = new short[polys.length][][];
         // temporary arrays to do comparisons
-        short[] pos1 = new short[] {(short) planeAbove, (short) planeAbove, (short) planeAbove};
-        short[] pos2 = new short[] {(short) planeAbove, (short) planeAbove, (short) planeAbove};
+        short[] pos1 = new short[] {planeAbove, planeAbove, planeAbove};
+        short[] pos2 = new short[] {planeAbove, planeAbove, planeAbove};
         // loop over all polygons
         for (int i1 = 0; i1 < polys.length; i1++) {
             // create corresponding result part
@@ -188,18 +188,22 @@ public class ExportDataManager extends ProgressReporter {
             // select the corresponding ids for the orientation
             int id1;
             int id2;
+            int id3;
             switch (directionId) {
                 case 0:
                     id1 = 1;
                     id2 = 2;
+                    id3 = 0;
                     break;
                 case 1:
                     id1 = 0;
                     id2 = 2;
+                    id3 = 1;
                     break;
                 default: //case 2
                     id1 = 0;
                     id2 = 1;
+                    id3 = 2;
                     break;
             }
 
@@ -209,6 +213,8 @@ public class ExportDataManager extends ProgressReporter {
             for (Map.Entry<Short, ArrayList<short[]>> entries : planes.entrySet()) {
                 setProgress((i/6f) * 100 + ((progressCount/elementCount)/6f) * 100);
                 progressCount++;
+                // the plane above this plane
+                short planeAbove = (short) (entries.getKey() + (i%2 == 0 ? 1 : -1));
                 // generate mesh
                 short minA = Short.MAX_VALUE;
                 short minB = Short.MAX_VALUE;
@@ -225,6 +231,50 @@ public class ExportDataManager extends ProgressReporter {
                     data[entry[id1]-minA][entry[id2]-minB] = true;
                 }
 
+                short start;
+                for (short x = 0; x < data.length; x++) {
+                    start = -1;
+                    for (short y = 0; y < data[0].length; y++) {
+                        if (data[x][y]) {
+                            if (start != -1) {
+                                for (int t = start + 1; t < y; t++) {
+                                    data[x][t] = true;
+                                }
+                            }
+                            start = y;
+                        } else {
+                            short[] pos = new short[3];
+                            pos[id1] = (short) (x + minA);
+                            pos[id2] = (short) (y + minB);
+                            pos[id3] = planeAbove;
+                            if (!hullManager.contains(pos)) {
+                                start = -1;
+                            }
+                        }
+                    }
+                }
+                for (short y = 0; y < data[0].length; y++) {
+                    start = -1;
+                    for (short x = 0; x < data.length; x++) {
+                        if (data[x][y]) {
+                            if (start != -1) {
+                                for (int t = start + 1; t < x; t++) {
+                                    data[t][y] = true;
+                                }
+                            }
+                            start = x;
+                        } else {
+                            short[] pos = new short[3];
+                            pos[id1] = (short) (x + minA);
+                            pos[id2] = (short) (y + minB);
+                            pos[id3] = planeAbove;
+                            if (!hullManager.contains(pos)) {
+                                start = -1;
+                            }
+                        }
+                    }
+                }
+
                 Collection<DelaunayTriangle> tris;
                 switch (algorithm) {
                     case ExportDataManager.MINIMAL_RECT_ALGORITHM:
@@ -237,9 +287,9 @@ public class ExportDataManager extends ProgressReporter {
                         // generate triangles
                         short[][][] polys = Grid2PolyHelper.convert(data);
                         // fix 3D t-junction problems
-                        int planeAbove = entries.getKey() + (i%2 == 0 ? 1 : -1);
                         // Note: This *should* work the same if only outside is used (i.e. holes are removed)
-                        polys = fix3DTJunctionProblems(polys, planeAbove, id1, id2, minA, minB);
+                        // todo: add options for this
+//                        polys = fix3DTJunctionProblems(polys, planeAbove, id1, id2, minA, minB);
                         // extract triangles
                         tris = Grid2TriPolyFast.triangulate(polys);
                         break;
