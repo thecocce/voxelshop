@@ -4,10 +4,7 @@ import com.jidesoft.action.DefaultDockableBarDockableHolder;
 import com.sun.imageio.plugins.gif.GIFImageReader;
 import com.sun.imageio.plugins.gif.GIFImageReaderSpi;
 import com.vitco.core.data.container.Voxel;
-import com.vitco.export.Kv6Exporter;
-import com.vitco.export.PnxExporter;
-import com.vitco.export.QbExporter;
-import com.vitco.export.VoxGameExporter;
+import com.vitco.export.*;
 import com.vitco.export.collada.ColladaExportWrapper;
 import com.vitco.export.collada.ColladaFile;
 import com.vitco.export.generic.ExportDataManager;
@@ -178,6 +175,13 @@ public class MainMenuLogic extends MenuLogicPrototype implements MenuLogicInterf
     }
     // ======================================
 
+    public final void openFile(File file) {
+        if (!data.loadFromFile(file)) {
+            console.addLine(langSelector.getString("error_on_file_load"));
+        }
+        save_location[0] = file.getPath(); // remember load location
+    }
+
     public final void registerLogic(final Frame frame) {
         // initialize the filter
         fc_vsd.addFileType("vsd", "PS4k File");
@@ -197,10 +201,7 @@ public class MainMenuLogic extends MenuLogicPrototype implements MenuLogicInterf
                 if (checkUnsavedChanges(frame)) {
                     File toOpen = fc_vsd.openFile(frame);
                     if (toOpen != null) {
-                        if (!data.loadFromFile(toOpen)) {
-                            console.addLine(langSelector.getString("error_on_file_load"));
-                        }
-                        save_location[0] = toOpen.getPath(); // remember load location
+                        openFile(toOpen);
                     }
                 }
             }
@@ -433,15 +434,26 @@ public class MainMenuLogic extends MenuLogicPrototype implements MenuLogicInterf
         collada.addComponent(removeEnclosed);
 
         // option: layer as object
-        CheckBoxModule layersAsObjects = new CheckBoxModule("layers_as_objects", "Create a new object for every layer", false);
+        CheckBoxModule layersAsObjects = new CheckBoxModule("layers_as_objects", "Create a new object for every layer", true);
         layersAsObjects.setInvisibleLookup("collada.type=legacy");
-        layersAsObjects.setStrikeThrough(true);
         collada.addComponent(layersAsObjects);
 
         // option: make texture edges save (pad textures)
-        CheckBoxModule padTextures = new CheckBoxModule("pad_textures", "Use Textures Padding", false);
+        CheckBoxModule padTextures = new CheckBoxModule("pad_textures", "Use Textures Padding", true);
         padTextures.setInvisibleLookup("collada.type=legacy");
         collada.addComponent(padTextures);
+
+        // option: export orthogonal vertex normals
+        CheckBoxModule exportOrthogonalVertexNormals = new CheckBoxModule(
+                "export_orthogonal_vertex_normals", "Export orthogonal vertex normals", false);
+        exportOrthogonalVertexNormals.setInvisibleLookup("collada.type=legacy");
+        collada.addComponent(exportOrthogonalVertexNormals);
+        LabelModule exportOrthogonalVertexNormalsInfo = new LabelModule(
+                "Info: Exporting orthogonal vertex normals can help with flat shading, but significantly increases vertex count. " +
+                "Usually the preferred way is to instead enable flat shading for the engine itself. No normals are exported when unchecked."
+        );
+        exportOrthogonalVertexNormalsInfo.setInvisibleLookup("collada.type=legacy");
+        collada.addComponent(exportOrthogonalVertexNormalsInfo);
 
         // option: use vertex colors
         CheckBoxModule useVertexColors = new CheckBoxModule("use_vertex_coloring", "Use vertex coloring (higher triangle count)", false);
@@ -456,6 +468,30 @@ public class MainMenuLogic extends MenuLogicPrototype implements MenuLogicInterf
         useBlackOutline.setVisibleLookup("collada.use_vertex_coloring=false");
         useBlackOutline.setStrikeThrough(true);
         collada.addComponent(useBlackOutline);
+
+        // option: force power of two textures
+        CheckBoxModule forcePOT = new CheckBoxModule("force_pot", "Use Power of Two textures", false);
+        forcePOT.setInvisibleLookup("collada.type=legacy");
+        forcePOT.setVisibleLookup("collada.use_vertex_coloring=false");
+        collada.addComponent(forcePOT);
+
+        // option: export with y-up or z-up
+        CheckBoxModule useYup = new CheckBoxModule("use_yup", "Set Y instead of Z as the up axis", false);
+        useYup.setInvisibleLookup("collada.type=legacy");
+        collada.addComponent(useYup);
+
+        LabelModule setOriginModeText = new LabelModule("Select Origin Mode:");
+        setOriginModeText.setInvisibleLookup("collada.type=legacy");
+        collada.addComponent(setOriginModeText);
+        ComboBoxModule setOriginModeSelect = new ComboBoxModule("origin_mode", new String[][]{
+                new String[]{"cross", "Use Cross"},
+                new String[]{"center", "Use Object Center"},
+                new String[]{"plane_center", "Use Object Center Projected onto Plane"},
+                new String[]{"box_center", "Use Bounding Box Center"},
+                new String[]{"box_plane_center", "Use Bounding Box Center Projected onto Plane"}
+        }, 0);
+        setOriginModeSelect.setInvisibleLookup("collada.type=legacy");
+        collada.addComponent(setOriginModeSelect);
 
         // ---------------
 
@@ -494,6 +530,11 @@ public class MainMenuLogic extends MenuLogicPrototype implements MenuLogicInterf
 
         // ---------------
 
+        // add "vox (voxlap)" exporter
+        FieldSet voxVoxLapExporter = new FieldSet("voxlap_format", "VoxLap Format (*.vox)");
+
+        // ---------------
+
         // add "pnx" exporter
         FieldSet pnxExporter = new FieldSet("pnx_format", "Pnx Format (*.pnx)");
 
@@ -516,25 +557,50 @@ public class MainMenuLogic extends MenuLogicPrototype implements MenuLogicInterf
         qbExporter.addComponent(use_compression);
 
         LabelModule compression_info = new LabelModule("Info: Compression saves a lot of space and makes opening and " +
-                "saving the file faster. Disable compression if you want to use the qb file for StoneHearth.");
-        compression_info.setVisibleLookup("export_type=qb_format");
+                "saving the file faster. Un-check for StoneHearth.");
         qbExporter.addComponent(compression_info);
 
         final CheckBoxModule use_box_as_matrix = new CheckBoxModule("use_box_as_matrix", "Use bounding box as matrix", false);
         qbExporter.addComponent(use_box_as_matrix);
 
         LabelModule box_as_matrix_info = new LabelModule(
-                "Warning: This option can result in loss of information or larger file size. " +
-                "Use this setting to gain control over the matrix size."
+                "Warning: This option will result in loss of information for voxels outside the bounding box. " +
+                "Use this setting to gain control over the matrix size. " +
+                "Check for StoneHearth and set bounding box to 31 41 31."
         );
-        box_as_matrix_info.setVisibleLookup("export_type=qb_format");
         qbExporter.addComponent(box_as_matrix_info);
+
+        final CheckBoxModule use_origin_as_zero = new CheckBoxModule("use_origin_as_zero", "Use origin as zero", true);
+        qbExporter.addComponent(use_origin_as_zero);
+
+        LabelModule origin_as_zero_info = new LabelModule(
+                "Info: Un-checking will move exported voxel into positive space. This means voxels are " +
+                "shifted when re-importing the exported file. Un-check for StoneHearth."
+        );
+        qbExporter.addComponent(origin_as_zero_info);
+
+        final CheckBoxModule use_vis_mask_encoding = new CheckBoxModule("use_vis_mask_encoding", "Use visibility mask encoding.", true);
+        qbExporter.addComponent(use_vis_mask_encoding);
+
+        LabelModule vis_mask_encoding_info = new LabelModule(
+                "Info: This will encode voxel side visibility information, which can " +
+                "result in faster load time. Un-check for StoneHearth."
+        );
+        qbExporter.addComponent(vis_mask_encoding_info);
+
+        final CheckBoxModule use_right_handed_z_axis_orientation = new CheckBoxModule("use_right_handed_z_axis_orientation", "Use right handed z-axis orientation.", true);
+        qbExporter.addComponent(use_right_handed_z_axis_orientation);
+
+        LabelModule right_handed_z_axis_orientation_info = new LabelModule(
+                "Info: This option can affect file size. Check for StoneHearth."
+        );
+        qbExporter.addComponent(right_handed_z_axis_orientation_info);
 
         // ---------------
 
         // add all formats
         dialog.addComboBox("export_type", new FieldSet[] {
-                collada, voxExporter, kv6Exporter, pnxExporter, qbExporter, imageRenderer
+                collada, voxExporter, voxVoxLapExporter, kv6Exporter, pnxExporter, qbExporter, imageRenderer
         }, 0);
 
         // ---------------
@@ -698,7 +764,7 @@ public class MainMenuLogic extends MenuLogicPrototype implements MenuLogicInterf
                                 @Override
                                 protected Object doInBackground() throws Exception {
 
-                                    ColladaExportWrapper colladaExportWrapper = new ColladaExportWrapper(progressDialog);
+                                    ColladaExportWrapper colladaExportWrapper = new ColladaExportWrapper(progressDialog, console);
 
                                     // set the "use layers" flag
                                     colladaExportWrapper.setUseLayers(dialog.is("collada.layers_as_objects=true"));
@@ -710,8 +776,27 @@ public class MainMenuLogic extends MenuLogicPrototype implements MenuLogicInterf
                                     colladaExportWrapper.setUseColoredVertices(dialog.is("collada.use_vertex_coloring=true"));
                                     // set use black outline
                                     colladaExportWrapper.setUseBlackOutline(dialog.is("collada.use_black_edges=true"));
+                                    // set force power of two force textures
+                                    colladaExportWrapper.setForcePOT(dialog.is("collada.force_pot=true"));
                                     // set the file name (only used if the layers are not used)
                                     colladaExportWrapper.setObjectName(FileTools.extractNameWithoutExtension(exportColladaTo));
+                                    // set the YUP flag (whether to use z-up or y-up)
+                                    colladaExportWrapper.setUseYUP(dialog.is("collada.use_yup=true"));
+                                    // set "export exportOrthogonalVertexNormals vertex normals" flag
+                                    colladaExportWrapper.setExportOrthogonalVertexNormals(dialog.is("collada.export_orthogonal_vertex_normals=true"));
+
+                                    // set the center mode
+                                    if (dialog.is("collada.origin_mode=cross")) {
+                                        colladaExportWrapper.setOriginMode(ColladaExportWrapper.ORIGIN_CROSS);
+                                    } else if (dialog.is("collada.origin_mode=center")) {
+                                        colladaExportWrapper.setOriginMode(ColladaExportWrapper.ORIGIN_CENTER);
+                                    } else if (dialog.is("collada.origin_mode=plane_center")) {
+                                        colladaExportWrapper.setOriginMode(ColladaExportWrapper.ORIGIN_PLANE_CENTER);
+                                    } else if (dialog.is("collada.origin_mode=box_center")) {
+                                        colladaExportWrapper.setOriginMode(ColladaExportWrapper.ORIGIN_BOX_CENTER);
+                                    } else if (dialog.is("collada.origin_mode=box_plane_center")) {
+                                        colladaExportWrapper.setOriginMode(ColladaExportWrapper.ORIGIN_BOX_PLANE_CENTER);
+                                    }
 
                                     // set the algorithm type
                                     if (dialog.is("collada.type=minimal")) {
@@ -769,7 +854,7 @@ public class MainMenuLogic extends MenuLogicPrototype implements MenuLogicInterf
                                 boolean success;
                                 long time = System.currentTimeMillis();
                                 try {
-                                    VoxGameExporter exporter = new VoxGameExporter(exportTo, data, progressDialog);
+                                    VoxGameExporter exporter = new VoxGameExporter(exportTo, data, progressDialog, console);
                                     success = exporter.writeData();
                                 } catch (IOException ignored) {
                                     success = false;
@@ -817,8 +902,56 @@ public class MainMenuLogic extends MenuLogicPrototype implements MenuLogicInterf
                                 boolean success;
                                 long time = System.currentTimeMillis();
                                 try {
-                                    Kv6Exporter exporter = new Kv6Exporter(exportTo, data, progressDialog);
+                                    Kv6Exporter exporter = new Kv6Exporter(exportTo, data, progressDialog, console);
                                     exporter.setUseWeightedCenter(dialog.is("kv6_format.use_weighted_center=true"));
+                                    success = exporter.writeData();
+                                } catch (IOException ignored) {
+                                    success = false;
+                                }
+                                if (success) {
+                                    console.addLine(
+                                            String.format(langSelector.getString("export_file_successful"),
+                                                    System.currentTimeMillis() - time)
+                                    );
+                                } else {
+                                    console.addLine(langSelector.getString("export_file_error"));
+                                }
+
+                                return null;
+                            }
+                        });
+
+                        // ===========
+                    } else if (dialog.is("export_type=voxlap_format")) {
+
+                        // ===========
+                        // -- handle vox voxlap file format
+
+                        // create progress dialog
+                        final ProgressDialog progressDialog = new ProgressDialog(frame);
+
+                        // do the exporting
+                        progressDialog.start(new ProgressWorker() {
+                            @Override
+                            protected Object doInBackground() throws Exception {
+
+                                // extract file name
+                                final File exportTo = new File(baseName + (baseName.endsWith(".vox") ? "" : ".vox"));
+                                // check if file exists
+                                if (exportTo.exists()) {
+                                    if (JOptionPane.showConfirmDialog(frame,
+                                            exportTo.getPath() + " " + langSelector.getString("replace_file_query"),
+                                            langSelector.getString("replace_file_query_title"),
+                                            JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION) {
+                                        return false;
+                                    }
+                                }
+
+                                // export vox voxlap format
+                                boolean success;
+                                long time = System.currentTimeMillis();
+                                try {
+                                    VoxVoxLapExporter exporter = new VoxVoxLapExporter(exportTo, data, progressDialog, console);
                                     success = exporter.writeData();
                                 } catch (IOException ignored) {
                                     success = false;
@@ -866,7 +999,7 @@ public class MainMenuLogic extends MenuLogicPrototype implements MenuLogicInterf
                                 boolean success;
                                 long time = System.currentTimeMillis();
                                 try {
-                                    PnxExporter exporter = new PnxExporter(exportTo, data, progressDialog);
+                                    PnxExporter exporter = new PnxExporter(exportTo, data, progressDialog, console);
                                     success = exporter.writeData();
                                 } catch (IOException ignored) {
                                     success = false;
@@ -914,9 +1047,12 @@ public class MainMenuLogic extends MenuLogicPrototype implements MenuLogicInterf
                                 boolean success;
                                 long time = System.currentTimeMillis();
                                 try {
-                                    QbExporter exporter = new QbExporter(exportTo, data, progressDialog);
+                                    QbExporter exporter = new QbExporter(exportTo, data, progressDialog, console);
                                     exporter.setUseCompression(dialog.is("qb_format.use_compression=true"));
                                     exporter.setUseBoxAsMatrix(dialog.is("qb_format.use_box_as_matrix=true"));
+                                    exporter.setUseOriginAsZero(dialog.is("qb_format.use_origin_as_zero=true"));
+                                    exporter.setUseVisMaskEncoding(dialog.is("qb_format.use_vis_mask_encoding=true"));
+                                    exporter.setUseRightHandedZAxisOrientation(dialog.is("qb_format.use_right_handed_z_axis_orientation=true"));
                                     success = exporter.writeData();
                                 } catch (IOException ignored) {
                                     success = false;

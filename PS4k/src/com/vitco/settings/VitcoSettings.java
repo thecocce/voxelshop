@@ -26,10 +26,12 @@ public final class VitcoSettings {
     public static final Border FRAME_BORDER = BorderFactory.createLineBorder(new Color(20, 20, 20), FRAME_BORDER_SIZE);
     public final static Color MAIN_MENU_ENABLED_COLOR = new Color(230, 230, 230);
     public final static Color MAIN_MENU_DISABLED_COLOR = new Color(170, 170, 170);
+    public final static Color MAIN_MENU_BACKGROUND = new Color(83, 83, 83);
     // soft black color
     public final static Color SOFT_BLACK = new Color(38, 38, 38);
     public final static Color SOFT_WHITE = new Color(230, 230, 230);
     public static final Color DEFAULT_BG_COLOR = new Color(83, 83, 83);
+    public static final Color FRAME_BG_COLOR = new Color(80, 80, 80);
     // tabbed pane
     public static final Color TABBED_PANE_HEADER_ACTIVE_COLOR = new Color(130, 130, 130);
     // button colors
@@ -40,13 +42,15 @@ public final class VitcoSettings {
     public static final Color BUTTON_BACKGROUND_PRESSED = new Color(83, 83, 83);
     public static final Color BUTTON_BORDER_COLOR = new Color(39, 39, 39);
 
+    public static final Color BUTTON_ENABLED = new Color(120, 20, 20);
+    public static final Color BUTTON_ENABLED_OVER = new Color(160, 30, 30);
+
     // texture window settings
-    public static final Color TEXTURE_WINDOW_BG_COLOR = new Color(80, 80, 80);
     public static final Color TEXTURE_BORDER = Color.BLACK;
     public static final Color TEXTURE_BORDER_ACTIVE = Color.ORANGE;
     public static final Color TEXTURE_BORDER_SELECTED = Color.RED;
 
-    public static final String VERSION_ID = "1.4.31";
+    public static final String VERSION_ID = "1.7.07";
     // version id
     public static final String TITLE_STRING = "VoxelShop - Alpha Version (V" + VERSION_ID + ")";
 
@@ -130,6 +134,7 @@ public final class VitcoSettings {
     // general
     public static final Color DEFAULT_BORDER_COLOR = new Color(60, 60, 60);
     public static final Color DEFAULT_BORDER_COLOR_LIGHT = new Color(130, 135, 144);
+    public static final Color DEFAULT_BORDER_COLOR_HIGHLIGHTED = new Color(189, 58, 12);
 
     // layer
     public static final Color VISIBLE_LAYER_BG = new Color(95, 95, 95);

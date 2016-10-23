@@ -3,6 +3,7 @@ package com.vitco.export.collada;
 import com.vitco.Main;
 import com.vitco.core.data.Data;
 import com.vitco.export.generic.ExportDataManager;
+import com.vitco.layout.content.console.ConsoleInterface;
 import com.vitco.manager.error.ErrorHandlerInterface;
 import com.vitco.util.components.progressbar.ProgressDialog;
 import com.vitco.util.components.progressbar.ProgressReporter;
@@ -21,8 +22,8 @@ public class ColladaExportWrapper extends ProgressReporter {
     private String objectName = "modelTEX";
 
     // constructor
-    public ColladaExportWrapper(ProgressDialog dialog) {
-        super(dialog);
+    public ColladaExportWrapper(ProgressDialog dialog, ConsoleInterface console) {
+        super(dialog, console);
     }
 
     public void setObjectName(String objectName) {
@@ -59,10 +60,39 @@ public class ColladaExportWrapper extends ProgressReporter {
         useBlackOutline = state;
     }
 
+    // true if textures are forced to be power of two dimensions
+    private boolean forcePOT = false;
+    public final void setForcePOT(boolean state) {
+        forcePOT = state;
+    }
+
     // setter for algorithm that is used
     private int algorithm = ExportDataManager.POLY2TRI_ALGORITHM;
     public final void setAlgorithm(int id) {
         algorithm = id;
+    }
+
+    // setter for Y-UP instead of Z-UP
+    private boolean useYUP = false;
+    public final void setUseYUP(boolean useYUP) {
+        this.useYUP = useYUP;
+    }
+
+    private boolean exportOrthogonalVertexNormals = false;
+    public void setExportOrthogonalVertexNormals(boolean exportOrthogonalVertexNormals) {
+        this.exportOrthogonalVertexNormals = exportOrthogonalVertexNormals;
+    }
+
+    // the origin mode
+    public static final int ORIGIN_CROSS = 0;
+    public static final int ORIGIN_CENTER = 1;
+    public static final int ORIGIN_PLANE_CENTER = 2;
+    public static final int ORIGIN_BOX_CENTER = 3;
+    public static final int ORIGIN_BOX_PLANE_CENTER = 4;
+    // setter for origin mode
+    private int originMode = ORIGIN_CROSS;
+    public final void setOriginMode(int originMode) {
+        this.originMode = originMode;
     }
 
     // do the exporting
@@ -73,8 +103,8 @@ public class ColladaExportWrapper extends ProgressReporter {
         String prefix = FileTools.extractNameWithoutExtension(colladaFile) + "_texture";
 
         // create data export objects
-        ExportDataManager exportDataManager = new ExportDataManager(getProgressDialog(), data, padTextures, removeHoles, algorithm);
-        ColladaFileExporter colladaFileExporter = new ColladaFileExporter(getProgressDialog(), exportDataManager, prefix, objectName);
+        ExportDataManager exportDataManager = new ExportDataManager(getProgressDialog(), getConsole(), data, padTextures, removeHoles, algorithm, useYUP, originMode, forcePOT, useLayers);
+        ColladaFileExporter colladaFileExporter = new ColladaFileExporter(getProgressDialog(), getConsole(), exportDataManager, prefix, objectName, useYUP, exportOrthogonalVertexNormals);
 
         setActivity("Writing Data File...", true);
         // write the dae file

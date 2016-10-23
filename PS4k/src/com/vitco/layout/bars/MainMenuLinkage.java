@@ -21,11 +21,58 @@ public class MainMenuLinkage extends BarLinkagePrototype {
     // true if the frame is currently maximized
     private boolean maximized = false;
 
+    // fullscreen button
+    private JideButton fullscreenButton;
+
+    private final Icon enable_fullscreen = new SaveResourceLoader(
+            "resource/img/icons/application/enable_fullscreen.png"
+    ).asIconImage();
+    private final Icon disable_fullscreen = new SaveResourceLoader(
+            "resource/img/icons/application/disable_fullscreen.png"
+    ).asIconImage();
+
     // var & setter
     private ActionManager actionManager;
     @Autowired
     public final void setActionManager(ActionManager actionManager) {
         this.actionManager = actionManager;
+    }
+
+    private void setMaximized(Frame frame, boolean state) {
+        if (state) {
+            // find out which screen we have the most overlap
+            Rectangle maximizedBounds = null;
+            int overlap = -1;
+            Rectangle frameBounds = frame.getBounds();
+            GraphicsEnvironment ge = GraphicsEnvironment.getLocalGraphicsEnvironment();
+            for (GraphicsDevice gd : ge.getScreenDevices()) {
+                GraphicsConfiguration defaultConfiguration = gd.getDefaultConfiguration();
+                Insets screenInsets = Toolkit.getDefaultToolkit().getScreenInsets(defaultConfiguration);
+                Rectangle usableScreenArea = defaultConfiguration.getBounds();
+                Rectangle withoutTaskBarOnScreen = new Rectangle(
+                        screenInsets.left,
+                        screenInsets.top,
+                        usableScreenArea.width - screenInsets.right,
+                        usableScreenArea.height - screenInsets.bottom
+                );
+                Rectangle overlapRect = usableScreenArea.intersection(frameBounds);
+                int cOverlap = overlapRect.width * overlapRect.height;
+                if (overlap < cOverlap) {
+                    maximizedBounds = withoutTaskBarOnScreen;
+                    overlap = cOverlap;
+                }
+            }
+            // restrict maximize to that screen (coordinates on the particular screen!)
+            frame.setMaximizedBounds(maximizedBounds);
+            frame.setExtendedState(frame.getExtendedState()|JFrame.MAXIMIZED_BOTH);
+        } else {
+            frame.setExtendedState(JFrame.NORMAL);
+        }
+    }
+
+    private boolean isMaximized(Frame frame) {
+        int state = frame.getExtendedState();
+        return (state & JFrame.MAXIMIZED_BOTH) == JFrame.MAXIMIZED_BOTH;
     }
 
     @Override
@@ -51,23 +98,15 @@ public class MainMenuLinkage extends BarLinkagePrototype {
             }
         });
         panel.add(minimize, BorderLayout.WEST);
-        JideButton maximize = new JideButton(new SaveResourceLoader(
-                "resource/img/icons/application/maximize.png"
-        ).asIconImage());
-        maximize.setBorder(BorderFactory.createEmptyBorder(0, 10, 0, 10));
-        maximize.addActionListener(new AbstractAction() {
+        fullscreenButton = new JideButton();
+        fullscreenButton.setBorder(BorderFactory.createEmptyBorder(0, 10, 0, 10));
+        fullscreenButton.addActionListener(new AbstractAction() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                int state = frame.getExtendedState();
-                if((state & JFrame.MAXIMIZED_BOTH) == JFrame.MAXIMIZED_BOTH) {
-                    frame.setExtendedState(JFrame.NORMAL);
-                }
-                else {
-                    frame.setExtendedState(JFrame.MAXIMIZED_BOTH);
-                }
+                setMaximized(frame, !isMaximized(frame));
             }
         });
-        panel.add(maximize, BorderLayout.CENTER);
+        panel.add(fullscreenButton, BorderLayout.CENTER);
         JideButton close = new JideButton(new SaveResourceLoader(
                 "resource/img/icons/application/close.png"
         ).asIconImage());
@@ -102,11 +141,13 @@ public class MainMenuLinkage extends BarLinkagePrototype {
         frame.addComponentListener(
                 new ComponentAdapter() {
                     public void componentResized(ComponentEvent e) {
-                        if (frame.getExtendedState() == JFrame.MAXIMIZED_BOTH) {
+                        if (isMaximized(frame)) {
                             ((JFrame)frame).getRootPane().setBorder(BorderFactory.createEmptyBorder());
+                            fullscreenButton.setIcon(disable_fullscreen);
                             maximized = true;
                         } else {
                             ((JFrame)frame).getRootPane().setBorder(VitcoSettings.FRAME_BORDER);
+                            fullscreenButton.setIcon(enable_fullscreen);
                             maximized = false;
                         }
                     }
@@ -351,20 +392,16 @@ public class MainMenuLinkage extends BarLinkagePrototype {
 
         public void mouseReleased(MouseEvent e) {
             // change maximized state on dbl click
-            if (e.getClickCount()%2 == 0) {
-                if ((frame.getExtendedState() & Frame.MAXIMIZED_BOTH) == JFrame.MAXIMIZED_BOTH) {
-                    frame.setExtendedState(JFrame.NORMAL);
-                } else {
-                    frame.setExtendedState(frame.getExtendedState()|JFrame.MAXIMIZED_BOTH);
-                }
+            if (e.getClickCount() == 2) {
+                setMaximized(frame, !isMaximized(frame));
             }
         }
 
         // update frame
         public void mouseDragged(MouseEvent e) {
             // no longer maximised
-            if ((frame.getExtendedState() & Frame.MAXIMIZED_BOTH) == JFrame.MAXIMIZED_BOTH) {
-                frame.setExtendedState(JFrame.NORMAL);
+            if (isMaximized(frame)) {
+                setMaximized(frame, false);
             }
             // update position
             Point current = this.getScreenLocation(e);

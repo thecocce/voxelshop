@@ -174,10 +174,14 @@ public class Preferences implements PreferencesInterface {
                 try {
                     new AutoFileCloser() {
                         @Override protected void doWork() throws Throwable {
-                            FileInputStream fileIn = autoClose(new FileInputStream(dataFile));
-                            ObjectInputStream in = autoClose(new ObjectInputStream(fileIn));
-
-                            map = FileTools.castHash((HashMap) in.readObject(), String.class, Object.class);
+                            try {
+                                FileInputStream fileIn = autoClose(new FileInputStream(dataFile));
+                                ObjectInputStream in = autoClose(new ObjectInputStream(fileIn));
+                                map = FileTools.castHash((HashMap) in.readObject(), String.class, Object.class);
+                            } catch (InvalidClassException ignored) { // ignore any error, it's "ok" for the pref file to be corrupt
+                            } catch (EOFException ignored) {
+                            } catch (StreamCorruptedException ignored) {
+                            } catch (RuntimeException ignored) {}
                         }
                     };
                 } catch (RuntimeException e) {

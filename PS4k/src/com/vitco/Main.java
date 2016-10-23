@@ -1,15 +1,18 @@
 package com.vitco;
 
+import com.vitco.layout.content.menu.MainMenuLogic;
 import com.vitco.layout.content.shortcut.ShortcutManager;
 import com.vitco.manager.action.ActionManager;
 import com.vitco.manager.action.ComplexActionManager;
 import com.vitco.manager.error.ErrorHandler;
 import com.vitco.manager.pref.Preferences;
 import com.vitco.settings.VitcoSettings;
+import com.vitco.util.misc.SaveResourceLoader;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
 
 import java.awt.*;
+import java.io.File;
 
 /**
  * Initially executed class
@@ -43,7 +46,13 @@ public class Main {
         }
 
         // the JIDE license
-        com.jidesoft.utils.Lm.verifyLicense("Pixelated Games", "PS4K", "__JIDE_PASSWORD__");
+        SaveResourceLoader saveResourceLoader = new SaveResourceLoader("resource/jidelicense.txt");
+        if (!saveResourceLoader.error) {
+            String[] jidelicense = saveResourceLoader.asLines();
+            if (jidelicense.length == 3) {
+                com.jidesoft.utils.Lm.verifyLicense(jidelicense[0], jidelicense[1], jidelicense[2]);
+            }
+        }
 
         // check if we are in debug mode
         if ((args.length > 0) && args[0].equals("debug")) {
@@ -59,6 +68,19 @@ public class Main {
             ((ActionManager) context.getBean("ActionManager")).performValidityCheck();
             ((ComplexActionManager) context.getBean("ComplexActionManager")).performValidityCheck();
         }
+
+        // open vsd file when program is started with "open with"
+        MainMenuLogic mainMenuLogic = ((MainMenuLogic) context.getBean("MainMenuLogic"));
+        for (String arg : args) {
+            if (arg.endsWith(".vsd")) {
+                File file = new File(arg);
+                if (file.exists() && !file.isDirectory()) {
+                    mainMenuLogic.openFile(file);
+                    break;
+                }
+            }
+        }
+
         // perform shortcut check
         ((ShortcutManager) context.getBean("ShortcutManager")).doSanityCheck(debug);
 //        // test console

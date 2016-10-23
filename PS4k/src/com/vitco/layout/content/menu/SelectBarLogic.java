@@ -10,6 +10,7 @@ import com.vitco.manager.action.types.StateActionPrototype;
 import com.vitco.manager.pref.PrefChangeListener;
 import com.vitco.settings.VitcoSettings;
 import com.vitco.util.misc.ColorTools;
+import gnu.trove.set.hash.THashSet;
 
 import javax.annotation.PostConstruct;
 import java.awt.*;
@@ -28,14 +29,6 @@ public class SelectBarLogic extends MenuLogicPrototype implements MenuLogicInter
     private boolean voxelsAreSelected = false;
     // true iff there are voxels in layer
     private boolean voxelsAreInLayer = false;
-
-    private Integer[] convertVoxelsToIdArray(Voxel[] voxels) {
-        Integer[] voxelIds = new Integer[voxels.length];
-        for (int i = 0; i < voxels.length; i++) {
-            voxelIds[i] = voxels[i].id;
-        }
-        return voxelIds;
-    }
 
     public void registerLogic(Frame frame) {
         // stores the current position (keeps current)
@@ -68,7 +61,7 @@ public class SelectBarLogic extends MenuLogicPrototype implements MenuLogicInter
                     storedPos[2] = currentPos[2];
 
                     // fetch voxel ids for cut
-                    Integer[] voxelIds = convertVoxelsToIdArray(voxels);
+                    Integer[] voxelIds = Voxel.convertVoxelsToIdArray(voxels);
                     // mass delete
                     data.massRemoveVoxel(voxelIds);
                     // refresh status
@@ -149,7 +142,7 @@ public class SelectBarLogic extends MenuLogicPrototype implements MenuLogicInter
                         data.setVoxelSelectionShift(0,0,0);
                     } else {
                         // mass deselect
-                        Integer[] voxelIds = convertVoxelsToIdArray(data.getSelectedVoxels());
+                        Integer[] voxelIds = Voxel.convertVoxelsToIdArray(data.getSelectedVoxels());
                         data.massSetVoxelSelected(voxelIds, false);
                     }
                 }
@@ -165,7 +158,7 @@ public class SelectBarLogic extends MenuLogicPrototype implements MenuLogicInter
             public void action(ActionEvent actionEvent) {
                 if (getStatus()) {
                     // mass delete
-                    Integer[] voxelIds = convertVoxelsToIdArray(data.getSelectedVoxels());
+                    Integer[] voxelIds = Voxel.convertVoxelsToIdArray(data.getSelectedVoxels());
                     data.massRemoveVoxel(voxelIds);
                 }
             }
@@ -176,15 +169,15 @@ public class SelectBarLogic extends MenuLogicPrototype implements MenuLogicInter
             }
         });
 
-        // select all, move to new layer, recolor
+        // select all, expand selection, move to new layer, recolor
         actionGroupManager.addAction("selection_interaction", "selection_tool_select_all", new StateActionPrototype() {
             @Override
             public void action(ActionEvent actionEvent) {
                 if (getStatus()) {
                     // todo make this an intent (select layer) -> to prevent two history entries
                     // deselect voxels (this is necessary if there are voxel selected that are not in the current layer)
-                    Integer[] selected = convertVoxelsToIdArray(data.getSelectedVoxels());
-                    Integer[] toSelect = convertVoxelsToIdArray(data.getLayerVoxels(data.getSelectedLayer()));
+                    Integer[] selected = Voxel.convertVoxelsToIdArray(data.getSelectedVoxels());
+                    Integer[] toSelect = Voxel.convertVoxelsToIdArray(data.getLayerVoxels(data.getSelectedLayer()));
                     if (selected.length > 0) {
                         HashSet<Integer> toDeselectList = new HashSet<Integer>(Arrays.asList(selected));
                         HashSet<Integer> toSelectList = new HashSet<Integer>(Arrays.asList(toSelect));
@@ -213,6 +206,35 @@ public class SelectBarLogic extends MenuLogicPrototype implements MenuLogicInter
                 return !isAnimate && voxelsAreInLayer;
             }
         });
+        actionGroupManager.addAction("selection_interaction", "selection_tool_expand_selection", new StateActionPrototype() {
+            @Override
+            public void action(ActionEvent actionEvent) {
+                if (getStatus()) {
+                    // extract colors from selected voxels
+                    THashSet<Color> colors = new THashSet<Color>();
+                    for (Voxel voxel : data.getSelectedVoxels()) {
+                        colors.add(voxel.getColor());
+                    }
+                    // identify which voxels to select
+                    ArrayList<Integer> toSelect = new ArrayList<Integer>();
+                    for (Voxel voxel : data.getVisibleLayerVoxel()) {
+                        if (colors.contains(voxel.getColor())) {
+                            toSelect.add(voxel.id);
+                        }
+                    }
+                    // select voxels
+                    if (toSelect.size() != 0) {
+                        Integer[] toSelectArray = new Integer[toSelect.size()];
+                        toSelect.toArray(toSelectArray);
+                        data.massSetVoxelSelected(toSelectArray, true);
+                    }
+                }
+            }
+            @Override
+            public boolean getStatus() {
+                return !isAnimate && voxelsAreSelected;
+            }
+        });
         actionGroupManager.addAction("selection_interaction", "selection_tool_as_new_layer", new StateActionPrototype() {
             @Override
             public void action(ActionEvent actionEvent) {
@@ -233,7 +255,7 @@ public class SelectBarLogic extends MenuLogicPrototype implements MenuLogicInter
             public void action(ActionEvent actionEvent) {
                 if (getStatus()) {
                     if (preferences.contains("currently_used_color")) {
-                        Integer[] voxelIds = convertVoxelsToIdArray(data.getSelectedVoxels());
+                        Integer[] voxelIds = Voxel.convertVoxelsToIdArray(data.getSelectedVoxels());
                         Color color = ColorTools.hsbToColor((float[])preferences.loadObject("currently_used_color"));
                         data.massSetColor(voxelIds, color);
                     }
@@ -249,7 +271,7 @@ public class SelectBarLogic extends MenuLogicPrototype implements MenuLogicInter
             @Override
             public void action(ActionEvent actionEvent) {
                 if (getStatus()) {
-                    Integer[] voxelIds = convertVoxelsToIdArray(data.getSelectedVoxels());
+                    Integer[] voxelIds = Voxel.convertVoxelsToIdArray(data.getSelectedVoxels());
                     data.massSetTexture(voxelIds, data.getSelectedTexture());
                 }
             }
