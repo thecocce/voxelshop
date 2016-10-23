@@ -303,27 +303,27 @@ public class ExportDataManager extends ProgressReporter {
                         data[entry[id1] - minA][entry[id2] - minB] = true;
                     }
 
-                Collection<DelaunayTriangle> tris;
-                switch (algorithm) {
-                    case ExportDataManager.MINIMAL_RECT_ALGORITHM:
-                        tris = Grid2TriGreedyOptimal.triangulate(data);
-                        break;
-                    case ExportDataManager.NAIVE_ALGORITHM:
-                        tris = Grid2TriNaive.triangulate(data);
-                        break;
-                    default:
-                        // generate triangles
-                        short[][][] polys = Grid2PolyHelper.convert(data);
-                        // fix 3D t-junction problems
-                        int planeAbove = entries.getKey() + (i % 2 == 0 ? 1 : -1);
-                        // Note: This *should* work the same if only outside is used (i.e. holes are removed)
-                        polys = fix3DTJunctionProblems(hullManager, polys, planeAbove, id1, id2, minA, minB);
-                        // extract triangles
-                        // tris = Grid2TriPolyFast.triangulate(polys);
-                        // extract triangles with angle guarantee
-                         tris = Grid2TriPolyFast.triangulate_degenerate_removal(polys);
-                        break;
-                }
+                    Collection<DelaunayTriangle> tris;
+                    switch (algorithm) {
+                        case ExportDataManager.MINIMAL_RECT_ALGORITHM:
+                            tris = Grid2TriGreedyOptimal.triangulate(data);
+                            break;
+                        case ExportDataManager.NAIVE_ALGORITHM:
+                            tris = Grid2TriNaive.triangulate(data);
+                            break;
+                        default:
+                            // generate triangles
+                            short[][][] polys = Grid2PolyHelper.convert(data);
+                            // fix 3D t-junction problems
+                            int planeAbove = entries.getKey() + (i % 2 == 0 ? 1 : -1);
+                            // Note: This *should* work the same if only outside is used (i.e. holes are removed)
+                            polys = fix3DTJunctionProblems(hullManager, polys, planeAbove, id1, id2, minA, minB);
+                            // extract triangles
+                            // tris = Grid2TriPolyFast.triangulate(polys);
+                            // extract triangles with angle guarantee
+                             tris = Grid2TriPolyFast.triangulate_degenerate_removal(polys);
+                            break;
+                    }
 
 
                     for (DelaunayTriangle tri : tris) {
